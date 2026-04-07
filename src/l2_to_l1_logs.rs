@@ -1,21 +1,13 @@
-//! Scoped collector for L2→L1 logs produced during EVM execution.
+//! L2→L1 log collection via the REVM `chain` context field.
 //!
-//! Uses a thread-local internally, but access is scoped through [`LogCollector`]
-//! which ensures logs are always drained at the right time and cannot leak
-//! between unrelated EVM executions.
+//! The REVM `Context` has a generic `CHAIN` parameter (default `()`) for
+//! chain-specific data. We use it to store L2→L1 logs produced by the
+//! L1Messenger precompile during execution.
 //!
-//! Usage:
-//! ```ignore
-//! let mut collector = LogCollector::new();
-//! for tx in transactions {
-//!     collector.set_tx_number(tx_idx);
-//!     evm.transact_commit(tx);  // precompile calls push_log()
-//!     let logs = collector.take_tx_logs();
-//! }
-//! ```
+//! This avoids thread-locals entirely — the log state lives in the EVM
+//! context, owned by the caller, with no global mutable state.
 
 use revm::primitives::{Address, B256};
-use std::cell::RefCell;
 
 /// Structured L2→L1 log entry matching the ZKsync OS protocol format.
 #[derive(Debug, Clone)]
@@ -28,60 +20,62 @@ pub struct L2ToL1Log {
     pub value: B256,
 }
 
-thread_local! {
-    static L2_TO_L1_LOGS: RefCell<Vec<L2ToL1Log>> = RefCell::new(Vec::new());
-    static CURRENT_TX_NUMBER: RefCell<u16> = RefCell::new(0);
-}
-
-/// Push a new L2→L1 log. Called by the L1Messenger precompile.
+/// Chain context that collects L2→L1 logs during EVM execution.
 ///
-/// This is the only function the precompile should call. All other access
-/// goes through [`LogCollector`].
-pub fn push_log(sender: Address, key: B256, value: B256) {
-    let tx_number = CURRENT_TX_NUMBER.with(|n| *n.borrow());
-    L2_TO_L1_LOGS.with(|logs| {
-        logs.borrow_mut().push(L2ToL1Log {
-            l2_shard_id: 0,
-            is_service: true,
-            tx_number_in_block: tx_number,
-            sender,
-            key,
-            value,
-        });
-    });
+/// Used as the `CHAIN` type parameter in `Context<..., CHAIN, ...>`.
+/// The L1Messenger precompile calls `push_log` via `ctx.chain_mut()`.
+/// The executor calls `take_logs` after each transaction.
+#[derive(Debug, Default, Clone)]
+pub struct ZkChainContext {
+    logs: Vec<L2ToL1Log>,
+    tx_number: u16,
 }
 
-/// Scoped accessor for L2→L1 logs. Ensures logs are properly drained
-/// and cannot leak between executions.
-///
-/// Create one per block execution. Drop clears any remaining logs.
-pub struct LogCollector {
-    _private: (), // prevent construction outside this module
-}
-
-impl LogCollector {
-    /// Create a new collector, clearing any stale state.
+impl ZkChainContext {
     pub fn new() -> Self {
-        L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().clear());
-        CURRENT_TX_NUMBER.with(|n| *n.borrow_mut() = 0);
-        Self { _private: () }
+        Self::default()
     }
 
     /// Set the current transaction number. Call before each tx execution.
     pub fn set_tx_number(&mut self, tx_number: u16) {
-        CURRENT_TX_NUMBER.with(|n| *n.borrow_mut() = tx_number);
+        self.tx_number = tx_number;
     }
 
-    /// Drain logs produced during the current transaction.
-    /// Call after each `transact_commit`.
-    pub fn take_tx_logs(&mut self) -> Vec<L2ToL1Log> {
-        L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().drain(..).collect())
+    /// Push an L2→L1 log. Called by the L1Messenger precompile.
+    pub fn push_log(&mut self, sender: Address, key: B256, value: B256) {
+        self.logs.push(L2ToL1Log {
+            l2_shard_id: 0,
+            is_service: true,
+            tx_number_in_block: self.tx_number,
+            sender,
+            key,
+            value,
+        });
+    }
+
+    /// Drain all logs collected during the current transaction.
+    pub fn take_logs(&mut self) -> Vec<L2ToL1Log> {
+        self.logs.drain(..).collect()
     }
 }
 
-impl Drop for LogCollector {
-    fn drop(&mut self) {
-        // Ensure no logs leak to subsequent executions on this thread.
-        L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().clear());
+/// Trait for chain contexts that can collect L2→L1 logs.
+///
+/// Implemented by `ZkChainContext`. The L1Messenger precompile is generic
+/// over `CTX: ContextTr` and accesses this via `ctx.chain_mut()`.
+/// Contexts with `Chain = ()` (no log collection) use the blanket impl
+/// which silently drops logs.
+pub trait L2ToL1LogStore {
+    fn push_l2_to_l1_log(&mut self, sender: Address, key: B256, value: B256);
+}
+
+impl L2ToL1LogStore for ZkChainContext {
+    fn push_l2_to_l1_log(&mut self, sender: Address, key: B256, value: B256) {
+        self.push_log(sender, key, value);
     }
+}
+
+/// Blanket impl for `()` — silently drops logs when no chain context is configured.
+impl L2ToL1LogStore for () {
+    fn push_l2_to_l1_log(&mut self, _sender: Address, _key: B256, _value: B256) {}
 }

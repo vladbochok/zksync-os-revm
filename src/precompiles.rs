@@ -26,25 +26,20 @@ use v1::l2_base_token::L2_BASE_TOKEN_ADDRESS;
 type CustomPrecompile<CTX> =
     fn(ctx: &mut CTX, inputs: &CallInputs, is_delegate: bool) -> InterpreterResult;
 
+use crate::l2_to_l1_logs::L2ToL1LogStore;
+
 /// Returns `Some(InterpreterResult)` if a precompile is defined for the given [ZkSpecId] and address.
 /// Returns `None` if no precompile is defined.
-fn maybe_call_custom_precompile<CTX: ContextTr>(
+fn maybe_call_custom_precompile<CTX>(
     spec: ZkSpecId,
     context: &mut CTX,
     inputs: &CallInputs,
-) -> Option<InterpreterResult> {
+) -> Option<InterpreterResult>
+where
+    CTX: ContextTr,
+    CTX::Chain: crate::l2_to_l1_logs::L2ToL1LogStore,
+{
     let precompile_address = inputs.bytecode_address;
-    if precompile_address == CONTRACT_DEPLOYER_ADDRESS
-        || precompile_address == L1_MESSENGER_ADDRESS
-        || precompile_address == L2_BASE_TOKEN_ADDRESS
-    {
-        eprintln!(
-            "DEBUG precompile: addr={precompile_address}, caller={}, target={}, is_delegate={}, gas={}, input_len={}",
-            inputs.caller, inputs.target_address,
-            inputs.bytecode_address != inputs.target_address,
-            inputs.gas_limit, inputs.input.len(),
-        );
-    }
 
     let precompile_call = match spec {
         ZkSpecId::AtlasV1 => match precompile_address {
@@ -133,6 +128,7 @@ impl ZKsyncPrecompiles {
 impl<CTX> PrecompileProvider<CTX> for ZKsyncPrecompiles
 where
     CTX: ContextTr<Cfg: Cfg<Spec = ZkSpecId>>,
+    CTX::Chain: crate::l2_to_l1_logs::L2ToL1LogStore,
 {
     type Output = InterpreterResult;
 

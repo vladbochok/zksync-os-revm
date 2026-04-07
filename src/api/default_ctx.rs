@@ -1,5 +1,6 @@
 //! Contains trait [`DefaultZk`] used to create a default context.
 use crate::{ZKsyncTx, ZkSpecId};
+use crate::l2_to_l1_logs::ZkChainContext;
 use revm::{
     Context, Journal, MainContext,
     context::{BlockEnv, CfgEnv, TxEnv},
@@ -7,7 +8,10 @@ use revm::{
 };
 
 /// Type alias for the default context type of the ZKsyncEvm.
-pub type ZkContext<DB> = Context<BlockEnv, ZKsyncTx<TxEnv>, CfgEnv<ZkSpecId>, DB, Journal<DB>>;
+///
+/// The `ZkChainContext` (CHAIN parameter) stores L2→L1 logs produced by the
+/// L1Messenger precompile. Access via `ctx.chain_mut()`.
+pub type ZkContext<DB> = Context<BlockEnv, ZKsyncTx<TxEnv>, CfgEnv<ZkSpecId>, DB, Journal<DB>, ZkChainContext>;
 
 /// Trait that allows for a default context to be created.
 pub trait DefaultZk {
@@ -20,6 +24,7 @@ impl DefaultZk for ZkContext<EmptyDB> {
         Context::mainnet()
             .with_tx(ZKsyncTx::builder().build_fill())
             .with_cfg(CfgEnv::new_with_spec(ZkSpecId::AtlasV2))
+            .with_chain(ZkChainContext::new())
     }
 }
 
@@ -34,7 +39,7 @@ mod test {
 
     #[test]
     fn default_run_zk() {
-        let ctx = Context::default();
+        let ctx = Context::default().with_chain(ZkChainContext::new());
         // convert to ZKsync OS context
         let mut evm = ctx.build_zk_with_inspector(NoOpInspector {});
         // execute

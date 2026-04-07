@@ -30,6 +30,7 @@ pub fn deployer_precompile_call<CTX>(
 ) -> InterpreterResult
 where
     CTX: ContextTr,
+    CTX::Chain: crate::l2_to_l1_logs::L2ToL1LogStore,
 {
     let view = CalldataView::new(ctx, &inputs.input);
     let mut calldata = view.as_slice();
