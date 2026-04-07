@@ -1,11 +1,18 @@
-//! Thread-local collector for L2→L1 logs produced during EVM execution.
+//! Scoped collector for L2→L1 logs produced during EVM execution.
 //!
-//! The L1Messenger precompile (0x8008) calls [`push_log`] for each `sendToL1()`
-//! call. The executor calls [`take_logs`] after each transaction to collect
-//! the structured L2→L1 log entries produced during that transaction.
+//! Uses a thread-local internally, but access is scoped through [`LogCollector`]
+//! which ensures logs are always drained at the right time and cannot leak
+//! between unrelated EVM executions.
 //!
-//! This avoids reconstructing logs from EVM events post-hoc — the precompile
-//! records the exact structured data at the point of emission.
+//! Usage:
+//! ```ignore
+//! let mut collector = LogCollector::new();
+//! for tx in transactions {
+//!     collector.set_tx_number(tx_idx);
+//!     evm.transact_commit(tx);  // precompile calls push_log()
+//!     let logs = collector.take_tx_logs();
+//! }
+//! ```
 
 use revm::primitives::{Address, B256};
 use std::cell::RefCell;
@@ -26,20 +33,12 @@ thread_local! {
     static CURRENT_TX_NUMBER: RefCell<u16> = RefCell::new(0);
 }
 
-/// Set the current transaction number within the block.
-/// Call before executing each transaction.
-pub fn set_tx_number(tx_number: u16) {
-    CURRENT_TX_NUMBER.with(|n| *n.borrow_mut() = tx_number);
-}
-
-/// Get the current transaction number.
-pub fn get_tx_number() -> u16 {
-    CURRENT_TX_NUMBER.with(|n| *n.borrow())
-}
-
 /// Push a new L2→L1 log. Called by the L1Messenger precompile.
+///
+/// This is the only function the precompile should call. All other access
+/// goes through [`LogCollector`].
 pub fn push_log(sender: Address, key: B256, value: B256) {
-    let tx_number = get_tx_number();
+    let tx_number = CURRENT_TX_NUMBER.with(|n| *n.borrow());
     L2_TO_L1_LOGS.with(|logs| {
         logs.borrow_mut().push(L2ToL1Log {
             l2_shard_id: 0,
@@ -52,13 +51,37 @@ pub fn push_log(sender: Address, key: B256, value: B256) {
     });
 }
 
-/// Take all collected L2→L1 logs, clearing the buffer.
-/// Call after each transaction or at block boundaries.
-pub fn take_logs() -> Vec<L2ToL1Log> {
-    L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().drain(..).collect())
+/// Scoped accessor for L2→L1 logs. Ensures logs are properly drained
+/// and cannot leak between executions.
+///
+/// Create one per block execution. Drop clears any remaining logs.
+pub struct LogCollector {
+    _private: (), // prevent construction outside this module
 }
 
-/// Clear all collected logs without returning them.
-pub fn clear_logs() {
-    L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().clear());
+impl LogCollector {
+    /// Create a new collector, clearing any stale state.
+    pub fn new() -> Self {
+        L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().clear());
+        CURRENT_TX_NUMBER.with(|n| *n.borrow_mut() = 0);
+        Self { _private: () }
+    }
+
+    /// Set the current transaction number. Call before each tx execution.
+    pub fn set_tx_number(&mut self, tx_number: u16) {
+        CURRENT_TX_NUMBER.with(|n| *n.borrow_mut() = tx_number);
+    }
+
+    /// Drain logs produced during the current transaction.
+    /// Call after each `transact_commit`.
+    pub fn take_tx_logs(&mut self) -> Vec<L2ToL1Log> {
+        L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().drain(..).collect())
+    }
+}
+
+impl Drop for LogCollector {
+    fn drop(&mut self) {
+        // Ensure no logs leak to subsequent executions on this thread.
+        L2_TO_L1_LOGS.with(|logs| logs.borrow_mut().clear());
+    }
 }
