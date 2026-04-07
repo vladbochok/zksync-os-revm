@@ -21,16 +21,13 @@ pub const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0xf6, 0xec, 0xa0, 0xb0];
 // Contract Deployer system hook (contract) needed for all envs (force deploy)
 pub const CONTRACT_DEPLOYER_ADDRESS: Address = address!("0000000000000000000000000000000000008006");
 
-pub const L2_COMPLEX_UPGRADER_ADDRESS: Address =
+pub const L2_GENESIS_UPGRADE_ADDRESS: Address =
     address!("000000000000000000000000000000000000800f");
 
 pub const MAX_CODE_SIZE: usize = 0x6000;
 
 /// Run the deployer precompile.
-///
-/// Matches zksync-os system_hooks/contract_deployer.rs: only handles
-/// `setBytecodeDetailsEVM` (0xf6eca0b0). Unknown selectors revert.
-pub fn deployer_precompile_call<CTX: ContextTr>(
+pub fn deployer_precompile_call<CTX>(
     ctx: &mut CTX,
     inputs: &CallInputs,
     is_delegate: bool,
@@ -40,15 +37,17 @@ where
     CTX::Chain: crate::l2_to_l1_logs::L2ToL1LogStore,
 {
     let view = CalldataView::new(ctx, &inputs.input);
-    let calldata = view.as_slice();
+    let mut calldata = view.as_slice();
     let caller = inputs.caller;
     let call_value = inputs.value.get();
     let mut gas = Gas::new(inputs.gas_limit);
 
+    // Mirror the same behaviour as on ZKsync OS
     if is_delegate || call_value != U256::ZERO {
         return revert(gas);
     }
 
+    // Charge base cost for calling system hook
     if !gas.record_cost(HOOK_BASE_GAS_COST) {
         return oog_error();
     }
@@ -65,16 +64,18 @@ where
                 return revert(gas);
             }
 
-            if caller != L2_COMPLEX_UPGRADER_ADDRESS {
+            // in future we need to handle regular(not genesis) protocol upgrades
+            if caller != L2_GENESIS_UPGRADE_ADDRESS {
                 return revert(gas);
             }
 
             // decoding according to setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)
-            let calldata = &calldata[4..];
+            calldata = &calldata[4..];
             if calldata.len() < 128 {
                 return revert(gas);
             }
 
+            // check that first 12 bytes in address encoding are zero
             if calldata[0..12].iter().any(|byte| *byte != 0) {
                 return revert(gas);
             }
@@ -93,6 +94,8 @@ where
             let _observable_bytecode_hash =
                 B256::from_slice(calldata[96..128].try_into().expect("Always valid"));
 
+            // Although this can be called as a part of protocol upgrade,
+            // we are checking the next invariants, just in case
             // EIP-158: reject code of length > 24576.
             if bytecode_length as usize > MAX_CODE_SIZE {
                 return revert(gas);
@@ -101,6 +104,7 @@ where
             // finished reading calldata, release borrow before mutating context
             drop(view);
 
+            // Charge extra gas for `set_bytecode_details`
             let extra_gas = set_bytecode_details_extra_gas(bytecode_length as u64);
             if !gas.record_cost(extra_gas) {
                 return oog_error();
@@ -110,23 +114,28 @@ where
                 "The bytecode is expected to be pre-loaded for any deployer precompile call",
             );
 
-            if bytecode.is_empty() || (bytecode_length as usize) > bytecode.original_bytes().len() {
-                return InterpreterResult::new(InstructionResult::Return, [].into(), gas);
-            }
-
             let bytecode_padded = Bytecode::new_legacy(Bytes::copy_from_slice(
                 &bytecode.original_bytes()[0..bytecode_length as usize],
             ));
-            ctx.journal_mut()
+            let account = ctx
+                .journal_mut()
                 .load_account(address)
-                .expect("load_account should work");
-            ctx.journal_mut().set_code(address, bytecode_padded);
-
-            // Charge for account warming
-            if !gas.record_cost(COLD_ACCOUNT_ACCESS_COST - WARM_STORAGE_READ_COST) {
+                .expect("load account");
+            let gas_for_access = if account.is_cold {
+                COLD_ACCOUNT_ACCESS_COST
+            } else {
+                WARM_STORAGE_READ_COST
+            };
+            // Charge base cost for warm/cold read
+            if !gas.record_cost(gas_for_access) {
                 return oog_error();
             }
 
+            ctx.journal_mut().touch_account(address);
+            ctx.journal_mut()
+                .load_account(address)
+                .expect("load_account");
+            ctx.journal_mut().set_code(address, bytecode_padded);
             InterpreterResult::new(InstructionResult::Return, [].into(), gas)
         }
         _ => revert(gas),
