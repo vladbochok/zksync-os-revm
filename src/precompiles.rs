@@ -34,6 +34,17 @@ fn maybe_call_custom_precompile<CTX: ContextTr>(
     inputs: &CallInputs,
 ) -> Option<InterpreterResult> {
     let precompile_address = inputs.bytecode_address;
+    if precompile_address == CONTRACT_DEPLOYER_ADDRESS
+        || precompile_address == L1_MESSENGER_ADDRESS
+        || precompile_address == L2_BASE_TOKEN_ADDRESS
+    {
+        eprintln!(
+            "DEBUG precompile: addr={precompile_address}, caller={}, target={}, is_delegate={}, gas={}, input_len={}",
+            inputs.caller, inputs.target_address,
+            inputs.bytecode_address != inputs.target_address,
+            inputs.gas_limit, inputs.input.len(),
+        );
+    }
 
     let precompile_call = match spec {
         ZkSpecId::AtlasV1 => match precompile_address {
@@ -162,7 +173,11 @@ where
 
     #[inline]
     fn contains(&self, address: &Address) -> bool {
+        // Check both standard Ethereum precompiles and ZKsync custom precompiles.
         self.inner.contains(address)
+            || *address == CONTRACT_DEPLOYER_ADDRESS
+            || *address == L1_MESSENGER_ADDRESS
+            || *address == L2_BASE_TOKEN_ADDRESS
     }
 }
 
