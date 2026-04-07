@@ -97,7 +97,12 @@ pub(crate) fn send_to_l1_inner<CTX: ContextTr>(
     };
     ctx.journal_mut().log(log);
 
-    // TODO: save L2 -> L1 message in a context of block
+    // Record structured L2→L1 log for the ZiSK proof system.
+    crate::l2_to_l1_logs::push_log(
+        L1_MESSENGER_ADDRESS,
+        b160_to_b256(caller),
+        message_hash,
+    );
 
     InterpreterResult::new(InstructionResult::Return, message_hash.into(), *gas)
 }

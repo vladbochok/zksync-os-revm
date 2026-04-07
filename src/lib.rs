@@ -4,6 +4,7 @@
 pub mod api;
 pub mod evm;
 pub mod handler;
+pub mod l2_to_l1_logs;
 pub mod precompiles;
 pub mod spec;
 pub mod transaction;
