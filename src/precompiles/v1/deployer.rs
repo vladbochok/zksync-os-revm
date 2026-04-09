@@ -1,3 +1,4 @@
+use crate::l2_to_l1_logs::L2ToL1LogStore;
 use crate::precompiles::calldata_view::CalldataView;
 use crate::precompiles::utils::{oog_error, revert};
 use revm::interpreter::CallInputs;

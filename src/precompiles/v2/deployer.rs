@@ -1,3 +1,4 @@
+use crate::l2_to_l1_logs::L2ToL1LogStore;
 use crate::precompiles::utils::{oog_error, revert};
 use crate::precompiles::v2::gas_cost::HOOK_BASE_GAS_COST;
 use crate::precompiles::{
