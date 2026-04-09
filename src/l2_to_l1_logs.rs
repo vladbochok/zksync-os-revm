@@ -29,6 +29,9 @@ pub struct L2ToL1Log {
 pub struct ZkChainContext {
     logs: Vec<L2ToL1Log>,
     tx_number: u16,
+    /// Mapping of address → blake2s bytecode hash from deployer precompile calls.
+    /// Populated by `setBytecodeDetailsEVM` during execution.
+    pub deployed_bytecode_hashes: Vec<(Address, B256)>,
 }
 
 impl ZkChainContext {
@@ -84,6 +87,19 @@ impl ZkChainContext {
         });
     }
 
+    /// Record a blake2s bytecode hash for an address (from deployer precompile).
+    pub fn record_deployed_bytecode(&mut self, address: Address, blake2s_hash: B256) {
+        self.deployed_bytecode_hashes.push((address, blake2s_hash));
+    }
+
+    /// Get the blake2s bytecode hash for an address, if deployed during this batch.
+    pub fn get_deployed_bytecode_hash(&self, address: &Address) -> Option<B256> {
+        // Return the last deployment for this address (in case of multiple deploys)
+        self.deployed_bytecode_hashes.iter().rev()
+            .find(|(a, _)| a == address)
+            .map(|(_, h)| *h)
+    }
+
     /// Drain all logs collected during the current transaction.
     pub fn take_logs(&mut self) -> Vec<L2ToL1Log> {
         self.logs.drain(..).collect()
@@ -98,11 +114,15 @@ impl ZkChainContext {
 /// which silently drops logs.
 pub trait L2ToL1LogStore {
     fn push_l2_to_l1_log(&mut self, sender: Address, key: B256, value: B256);
+    fn record_bytecode_deployment(&mut self, _address: Address, _blake2s_hash: B256) {}
 }
 
 impl L2ToL1LogStore for ZkChainContext {
     fn push_l2_to_l1_log(&mut self, sender: Address, key: B256, value: B256) {
         self.push_log(sender, key, value);
+    }
+    fn record_bytecode_deployment(&mut self, address: Address, blake2s_hash: B256) {
+        self.record_deployed_bytecode(address, blake2s_hash);
     }
 }
 
