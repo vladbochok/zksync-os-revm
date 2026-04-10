@@ -110,7 +110,6 @@ where
                 .load_account(address)
                 .expect("load_account");
             ctx.journal_mut().set_code(address, bytecode_padded);
-            ctx.chain_mut().record_bytecode_deployment(address, bytecode_hash);
             InterpreterResult::new(InstructionResult::Return, [].into(), gas)
         }
         _ => revert(gas),

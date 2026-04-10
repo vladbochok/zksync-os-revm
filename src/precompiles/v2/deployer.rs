@@ -138,10 +138,6 @@ where
                 .expect("load_account");
             ctx.journal_mut().set_code(address, bytecode_padded);
 
-            // Record the blake2s bytecode hash for this address.
-            // The executor uses this to compute correct 0x8003 AccountProperties writes.
-            ctx.chain_mut().record_bytecode_deployment(address, bytecode_hash);
-
             InterpreterResult::new(InstructionResult::Return, [].into(), gas)
         }
         _ => revert(gas),
