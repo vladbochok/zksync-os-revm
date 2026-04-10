@@ -28,6 +28,10 @@ pub trait ZkTxTr: Transaction {
     fn gas_used_override(&self) -> Option<u64>;
 
     fn force_fail(&self) -> bool;
+
+    /// L1 transaction hash for L1→L2 deposits and upgrade txs.
+    /// Used by the handler to emit the bootloader result L2→L1 log.
+    fn l1_tx_hash(&self) -> Option<B256>;
 }
 
 /// ZKsync OS transaction.
@@ -192,6 +196,10 @@ impl<T: Transaction> ZkTxTr for ZKsyncTx<T> {
     fn force_fail(&self) -> bool {
         self.force_fail
     }
+
+    fn l1_tx_hash(&self) -> Option<B256> {
+        self.l1_to_l2_part.l1_tx_hash
+    }
 }
 
 /// Builder for constructing [`ZKsyncTx`] instances
@@ -243,6 +251,12 @@ impl ZKsyncTxBuilder {
     /// Set the refund recipient of the L1 -> L2 part of the transaction.
     pub fn refund_recipient(mut self, refund_recipient: Option<Address>) -> Self {
         self.l1_to_l2_part.refund_recipient = refund_recipient;
+        self
+    }
+
+    /// Set the L1 transaction hash for the bootloader result log.
+    pub fn l1_tx_hash(mut self, l1_tx_hash: Option<B256>) -> Self {
+        self.l1_to_l2_part.l1_tx_hash = l1_tx_hash;
         self
     }
 
