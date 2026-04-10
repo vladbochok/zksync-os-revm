@@ -1,5 +1,5 @@
 //! Implementation of the [`ExecuteEvm`] trait for the [`ZKsyncEvm`].
-use crate::{ZKsyncTxError, ZkSpecId, evm::ZKsyncEvm, handler::ZKsyncHandler, transaction::ZkTxTr};
+use crate::{ZKsyncTxError, ZkSpecId, evm::ZKsyncEvm, handler::ZKsyncHandler, l2_to_l1_logs::L2ToL1LogStore, transaction::ZkTxTr};
 use revm::{
     DatabaseCommit, ExecuteCommitEvm, ExecuteEvm,
     context::{ContextSetters, result::ExecResultAndState},
@@ -21,12 +21,12 @@ use revm::{
 
 /// Type alias for ZKsync OS context
 pub trait ZkContextTr:
-    ContextTr<Journal: JournalTr<State = EvmState>, Tx: ZkTxTr, Cfg: Cfg<Spec = ZkSpecId>>
+    ContextTr<Journal: JournalTr<State = EvmState>, Tx: ZkTxTr, Cfg: Cfg<Spec = ZkSpecId>, Chain: L2ToL1LogStore>
 {
 }
 
 impl<T> ZkContextTr for T where
-    T: ContextTr<Journal: JournalTr<State = EvmState>, Tx: ZkTxTr, Cfg: Cfg<Spec = ZkSpecId>>
+    T: ContextTr<Journal: JournalTr<State = EvmState>, Tx: ZkTxTr, Cfg: Cfg<Spec = ZkSpecId>, Chain: L2ToL1LogStore>
 {
 }
 

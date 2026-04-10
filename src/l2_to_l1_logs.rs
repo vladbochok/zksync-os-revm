@@ -115,6 +115,9 @@ impl ZkChainContext {
 pub trait L2ToL1LogStore {
     fn push_l2_to_l1_log(&mut self, sender: Address, key: B256, value: B256);
     fn record_bytecode_deployment(&mut self, _address: Address, _blake2s_hash: B256) {}
+    fn set_tx_number(&mut self, _tx_number: u16) {}
+    /// Emit the bootloader result log for L1→L2 transactions.
+    fn emit_l1_tx_result(&mut self, _tx_hash: B256, _success: bool) {}
 }
 
 impl L2ToL1LogStore for ZkChainContext {
@@ -123,6 +126,12 @@ impl L2ToL1LogStore for ZkChainContext {
     }
     fn record_bytecode_deployment(&mut self, address: Address, blake2s_hash: B256) {
         self.record_deployed_bytecode(address, blake2s_hash);
+    }
+    fn set_tx_number(&mut self, tx_number: u16) {
+        self.tx_number = tx_number;
+    }
+    fn emit_l1_tx_result(&mut self, tx_hash: B256, success: bool) {
+        ZkChainContext::emit_l1_tx_result(self, tx_hash, success);
     }
 }
 

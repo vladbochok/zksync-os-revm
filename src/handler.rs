@@ -3,6 +3,7 @@ use std::boxed::Box;
 
 use crate::{
     api::exec::ZkContextTr,
+    l2_to_l1_logs::L2ToL1LogStore,
     transaction::{ZKsyncTxError, ZkTxTr},
 };
 use revm::{
@@ -120,6 +121,13 @@ where
             self.eip7623_check_gas_floor(evm, exec_result, init_and_floor_gas);
             self.reimburse_caller(evm, exec_result)?;
             self.reward_beneficiary(evm, exec_result)?;
+        }
+
+        // Emit the bootloader result L2→L1 log for L1 transactions.
+        // In zksync-os this is done by the bootloader after each L1→L2 tx.
+        if let Some(tx_hash) = evm.ctx().tx().l1_tx_hash() {
+            let success = exec_result.interpreter_result().result.is_ok();
+            evm.ctx().chain_mut().emit_l1_tx_result(tx_hash, success);
         }
 
         Ok(())
