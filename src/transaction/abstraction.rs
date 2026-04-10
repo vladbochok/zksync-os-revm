@@ -207,13 +207,16 @@ impl<T: Transaction> ZkTxTr for ZKsyncTx<T> {
     }
 }
 
-/// Builder for constructing [`ZKsyncTx`] instances
+/// Builder for constructing [`ZKsyncTx`] instances.
+///
+/// `tx_hash` is mandatory — call `.tx_hash(hash)` before `.build()`.
 #[derive(Default, Debug)]
 pub struct ZKsyncTxBuilder {
     base: TxEnvBuilder,
     l1_to_l2_part: L1ToL2TransactionParts,
     gas_used_override: Option<u64>,
     force_fail: bool,
+    tx_hash_set: bool,
 }
 
 impl ZKsyncTxBuilder {
@@ -224,6 +227,7 @@ impl ZKsyncTxBuilder {
             l1_to_l2_part: L1ToL2TransactionParts::default(),
             gas_used_override: None,
             force_fail: false,
+            tx_hash_set: false,
         }
     }
 
@@ -259,9 +263,10 @@ impl ZKsyncTxBuilder {
         self
     }
 
-    /// Set the trusted transaction hash.
+    /// Set the trusted transaction hash. **Required** — build will panic without it.
     pub fn tx_hash(mut self, tx_hash: B256) -> Self {
         self.l1_to_l2_part.tx_hash = tx_hash;
+        self.tx_hash_set = true;
         self
     }
 
@@ -285,6 +290,7 @@ impl ZKsyncTxBuilder {
     /// Build the [`ZKsyncTx`] instance, return error if the transaction is not valid.
     ///
     pub fn build(self) -> Result<ZKsyncTx<TxEnv>, ZkBuilderror> {
+        assert!(self.tx_hash_set, "tx_hash is required — call .tx_hash(hash) before .build()");
         let base = self.base.build()?;
 
         Ok(ZKsyncTx {
