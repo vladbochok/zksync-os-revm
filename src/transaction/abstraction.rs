@@ -29,9 +29,14 @@ pub trait ZkTxTr: Transaction {
 
     fn force_fail(&self) -> bool;
 
-    /// L1 transaction hash for L1→L2 deposits and upgrade txs.
-    /// Used by the handler to emit the bootloader result L2→L1 log.
-    fn l1_tx_hash(&self) -> Option<B256>;
+    /// Trusted transaction hash. Used for the bootloader result L2→L1 log
+    /// and the block header's transactions rolling hash.
+    ///
+    /// The caller is fully responsible for setting this correctly:
+    /// - L1 priority txs: canonical priority queue hash
+    /// - Upgrade txs: L1 upgrade tx hash
+    /// - L2 txs: keccak256 of EIP-2718 encoded signed bytes
+    fn tx_hash(&self) -> B256;
 }
 
 /// ZKsync OS transaction.
@@ -197,8 +202,8 @@ impl<T: Transaction> ZkTxTr for ZKsyncTx<T> {
         self.force_fail
     }
 
-    fn l1_tx_hash(&self) -> Option<B256> {
-        self.l1_to_l2_part.l1_tx_hash
+    fn tx_hash(&self) -> B256 {
+        self.l1_to_l2_part.tx_hash
     }
 }
 
@@ -254,9 +259,9 @@ impl ZKsyncTxBuilder {
         self
     }
 
-    /// Set the L1 transaction hash for the bootloader result log.
-    pub fn l1_tx_hash(mut self, l1_tx_hash: Option<B256>) -> Self {
-        self.l1_to_l2_part.l1_tx_hash = l1_tx_hash;
+    /// Set the trusted transaction hash.
+    pub fn tx_hash(mut self, tx_hash: B256) -> Self {
+        self.l1_to_l2_part.tx_hash = tx_hash;
         self
     }
 
