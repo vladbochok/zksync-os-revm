@@ -92,7 +92,7 @@ where
                 }
             };
 
-            let _observable_bytecode_hash =
+            let observable_bytecode_hash =
                 B256::from_slice(calldata[96..128].try_into().expect("Always valid"));
 
             // Although this can be called as a part of protocol upgrade,
@@ -111,7 +111,8 @@ where
                 return oog_error();
             }
 
-            let bytecode = ctx.db_mut().code_by_hash(bytecode_hash).expect(
+            // Look up by observable (keccak256) hash — all bytecodes are keyed by keccak256.
+            let bytecode = ctx.db_mut().code_by_hash(observable_bytecode_hash).expect(
                 "The bytecode is expected to be pre-loaded for any deployer precompile call",
             );
 
