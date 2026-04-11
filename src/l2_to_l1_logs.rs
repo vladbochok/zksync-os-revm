@@ -7,7 +7,7 @@
 //! This avoids thread-locals entirely — the log state lives in the EVM
 //! context, owned by the caller, with no global mutable state.
 
-use revm::primitives::{Address, B256, address};
+use revm::primitives::{Address, B256, U256, address};
 
 /// Structured L2→L1 log entry matching the ZKsync OS protocol format.
 #[derive(Debug, Clone)]
@@ -67,13 +67,7 @@ impl ZkChainContext {
     pub fn emit_l1_tx_result(&mut self, tx_hash: B256, success: bool) {
         const BOOTLOADER_ADDRESS: Address =
             address!("0000000000000000000000000000000000008001");
-        let value = if success {
-            let mut v = B256::ZERO;
-            v.0[31] = 1;
-            v
-        } else {
-            B256::ZERO
-        };
+        let value = B256::from(U256::from(success as u8));
         self.logs.push(L2ToL1Log {
             l2_shard_id: 0,
             is_service: true,
