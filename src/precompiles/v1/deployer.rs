@@ -85,7 +85,7 @@ where
                 }
             };
 
-            let _observable_bytecode_hash =
+            let observable_bytecode_hash =
                 B256::from_slice(calldata[96..128].try_into().expect("Always valid"));
 
             // Although this can be called as a part of protocol upgrade,
@@ -98,7 +98,9 @@ where
             // finished reading calldata, release borrow before mutating context
             drop(view);
 
-            let bytecode = ctx.db_mut().code_by_hash(bytecode_hash).expect(
+            // Look up by observable (keccak256) hash. Each DB implementation provides
+            // bytecodes keyed by keccak256: ProvenDB directly, RevmStateProvider via cache.
+            let bytecode = ctx.db_mut().code_by_hash(observable_bytecode_hash).expect(
                 "The bytecode is expected to be pre-loaded for any deployer precompile call",
             );
 
